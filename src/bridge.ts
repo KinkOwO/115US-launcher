@@ -1,0 +1,459 @@
+// 后端命令与事件的唯一入口：字符串只在这里出现一次，界面组件不手写 invoke 名。
+import { invoke } from "@tauri-apps/api/core";
+import { type UnlistenFn, listen } from "@tauri-apps/api/event";
+
+export type Phase = "idle" | "starting" | "running" | "stopping" | "error";
+
+export interface Status {
+  phase: Phase;
+  detail: string;
+}
+
+export interface StartOutcome {
+  started: boolean;
+  phase: Phase;
+  detail: string;
+}
+
+export interface LogLine {
+  seq: number;
+  time: string;
+  level: string;
+  text: string;
+}
+
+export interface Readiness {
+  can_start: boolean;
+  detail: string;
+  root: string;
+  root_source: string;
+  client_ready: boolean;
+  client_dir: string;
+  server_ready: boolean;
+  server_detail: string;
+  storage_ready: boolean;
+  storage_detail: string;
+  gateway_listening: boolean;
+}
+
+export type Level = "ok" | "warn" | "error";
+
+export interface HealthItem {
+  id: string;
+  name: string;
+  level: Level;
+  value: string;
+  hint: string;
+}
+
+export interface HealthReport {
+  items: HealthItem[];
+  ok: number;
+  warn: number;
+  error: number;
+  elapsed_ms: number;
+}
+
+export interface PortOwner {
+  port: number;
+  port_label: string;
+  listening: boolean;
+  pid: number | null;
+  image: string | null;
+  kind: string;
+  kind_label: string;
+}
+
+export interface Leftover {
+  pid: number;
+  image: string;
+}
+
+export interface PortReport {
+  gateway: PortOwner;
+  leftovers: Leftover[];
+  blocked: PortOwner[];
+  killable: number[];
+  protected_ones: PortOwner[];
+  killed: number[];
+  failed: string[];
+  rechecked: boolean;
+  summary: string;
+}
+
+export interface AppInfo {
+  name: string;
+  version: string;
+  author: string;
+  root: string;
+  root_source: string;
+  app_dir: string;
+  log_dir: string;
+}
+
+export interface ModeOption {
+  value: string;
+  label: string;
+}
+
+export interface ConfigView {
+  account: string;
+  accounts: string[];
+  game_mode: string;
+  game_modes: ModeOption[];
+  auto_stop_on_client_exit: boolean;
+  auto_pickup: boolean;
+  auto_report: boolean;
+  auto_report_prompted: boolean;
+  pending_reports: number;
+  client_dir: string;
+  client_ready: boolean;
+  storage_detail: string;
+}
+
+export interface ActionRecord {
+  message: string;
+}
+
+/** 站上一条「问题」的公开摘要。created / updated 是 unix 秒，格式化口径与网页一致。 */
+export interface Issue {
+  id: string;
+  title: string;
+  category: string;
+  status: string;
+  public_note: string;
+  fix_version: string;
+  created: number;
+  updated: number;
+  report_count: number;
+  duplicate_count: number;
+  updates: IssueUpdate[];
+}
+
+export interface IssueUpdate {
+  created: number;
+  status: string;
+  message: string;
+  fix_version: string;
+}
+
+export interface Facet {
+  key: string;
+  count: number;
+}
+
+export interface Board {
+  issues: Issue[];
+  count: number;
+  page: number;
+  report_count: number;
+  status_counts: Facet[];
+  category_counts: Facet[];
+}
+
+/** 「我的反馈」的一条：本机存过编号与凭证，站上换回来的最新状态。 */
+export interface Mine {
+  id: string;
+  title: string;
+  created: number;
+  status: string;
+  issue: Issue | null;
+}
+
+/** 选项列表与两处预填值都由后端给，前端不另抄一份枚举。 */
+export interface FeedbackMeta {
+  categories: string[];
+  statuses: string[];
+  severities: string[];
+  frequencies: string[];
+  client_version: string;
+  environment: string;
+  launcher_version: string;
+}
+
+export interface Submission {
+  title: string;
+  character: string;
+  steps: string;
+  expected: string;
+  actual: string;
+  /** `2026-10-14T13:45`，留空按当下算。 */
+  occurred: string;
+  category: string;
+  severity: string;
+  frequency: string;
+  location: string;
+  contact: string;
+  related_issue_id: string;
+}
+
+export interface SubmitOutcome {
+  id: string;
+  duplicate: boolean;
+  issue: Issue | null;
+}
+
+export interface BoardQuery {
+  page?: number;
+  category?: string;
+  status?: string;
+  q?: string;
+  sort?: string;
+}
+
+export interface PortBlocked {
+  where: string;
+  report: PortReport;
+  hint: string;
+}
+
+/** MOD 页四摞事实：服务端 mod、规则脚本、客户端插件、modkit 安装层。 */
+export interface ModsState {
+  server: ServerMods;
+  scripts: ScriptMods;
+  client: ClientMods;
+  modkit: ModkitMods;
+}
+
+export interface ServerMods {
+  mods_dir: string;
+  enabled_present: boolean;
+  gateway_note: string;
+  broken_note: string;
+  ignored_note: string;
+  evidence_run: string;
+  mods: ServerMod[];
+}
+
+export interface ServerMod {
+  id: string;
+  purpose: string;
+  enabled: boolean;
+  seen: boolean;
+}
+
+export interface ScriptMods {
+  dir: string;
+  exists: boolean;
+  scripts: { name: string; size: number }[];
+  provided: string[];
+}
+
+export interface ClientMods {
+  dir: string;
+  present: boolean;
+  auto_discover: boolean;
+  plugins: ClientPlugin[];
+  host_log: string;
+  host_tail: string[];
+}
+
+export interface ClientPlugin {
+  id: string;
+  dll: string;
+  in_manifest: boolean;
+  enabled: boolean;
+  deps: string[];
+  ready: boolean | null;
+  reject_reason: string;
+}
+
+export interface ModkitMods {
+  present: boolean;
+  registry: string;
+  total: number;
+  entries: number;
+  risky: { id: string; target: string; kind: string }[];
+}
+
+/// 浮出/归位面板窗口：x、y 是相对主窗左上角的 CSS 像素。
+export interface PanelMoved {
+  panel: string;
+  x: number;
+  y: number;
+}
+
+/** 独立窗口拖回主窗的路上：落点用主窗的逻辑坐标，inside=false 表示已经拖出去了。 */
+export interface PanelHover {
+  panel: string;
+  x: number;
+  y: number;
+  inside: boolean;
+}
+
+/**
+ * 连发配置。字段是 camelCase —— 这份 JSON 要和旧启动器共用同一个 `autofire` 小节，
+ * 磁盘上的键名不归我们改；下面的实况结构是内存里的，沿用后端惯用的 snake_case。
+ */
+export interface AutofireStep {
+  key: string;
+  holdMs: number;
+  gapMs: number;
+}
+
+export interface AutofireEntry {
+  type: "rapid" | "combo";
+  key: string;
+  intervalMs: number;
+  holdMs: number;
+  trigger: string;
+  steps: AutofireStep[];
+  enabled: boolean;
+}
+
+export interface AutofireConfig {
+  enabled: boolean;
+  mute: boolean;
+  hotkey: string;
+  targets: string[];
+  entries: AutofireEntry[];
+}
+
+export interface KeyOption {
+  label: string;
+  value: string;
+}
+
+export interface AutofireEntryLive {
+  label: number;
+  kind: string;
+  held: boolean;
+  busy: boolean;
+  taps: number;
+}
+
+export interface AutofireLive {
+  running: boolean;
+  master: boolean;
+  focused: boolean;
+  hotkey: string;
+  hotkey_error: string;
+  targets: string[];
+  pids: number[];
+  entries: AutofireEntryLive[];
+  hook_events: number;
+  sends: number;
+  send_fails: number;
+  last_fail: string;
+  skip_focus: number;
+  skip_master: number;
+}
+
+export interface AutofireView {
+  config: AutofireConfig;
+  keys: KeyOption[];
+  live: AutofireLive;
+}
+
+export interface SaveInfo {
+  db_path: string;
+  storage_dir: string;
+  backup_dir: string;
+  exists: boolean;
+  size_text: string;
+  modified: string;
+  accounts: number;
+  characters: number;
+  detail: string;
+  sidecars: string[];
+}
+
+export interface BackupItem {
+  name: string;
+  path: string;
+  size_text: string;
+  modified: string;
+  usable: boolean;
+  note: string;
+  accounts: number;
+  characters: number;
+}
+
+export interface SavesState {
+  save: SaveInfo;
+  backups: BackupItem[];
+}
+
+export const commands = {
+  appInfo: () => invoke<AppInfo>("app_info"),
+  logSnapshot: (limit = 600) => invoke<LogLine[]>("log_snapshot", { limit }),
+  readiness: () => invoke<Readiness>("readiness_state"),
+  envCheck: () => invoke<HealthReport>("env_check"),
+  status: () => invoke<Status>("game_status"),
+  start: (mode?: string) => invoke<StartOutcome>("game_start", { mode }),
+  stop: () => invoke<boolean>("game_stop"),
+  ports: () => invoke<PortReport>("ports_report"),
+  forceClean: () => invoke<PortReport>("force_clean"),
+  config: () => invoke<ConfigView>("config_get"),
+  setAccount: (account: string) => invoke<ActionRecord>("set_account", { account }),
+  setGameMode: (mode: string) => invoke<ActionRecord>("set_game_mode", { mode }),
+  setAutoStop: (enabled: boolean) => invoke<ActionRecord>("set_auto_stop", { enabled }),
+  setAutoPickup: (enabled: boolean) => invoke<ActionRecord>("set_auto_pickup", { enabled }),
+  setAutoReport: (enabled: boolean) => invoke<ActionRecord>("set_auto_report", { enabled }),
+  modsState: () => invoke<ModsState>("mods_state"),
+  setServerMod: (id: string, enabled: boolean) =>
+    invoke<ActionRecord>("set_server_mod", { id, enabled }),
+  autofireGet: () => invoke<AutofireView>("autofire_get"),
+  autofireLive: () => invoke<AutofireLive>("autofire_live"),
+  autofireSave: (config: AutofireConfig) =>
+    invoke<ActionRecord>("autofire_save", { config }),
+  autofireStop: () => invoke<ActionRecord>("autofire_stop"),
+  savesState: () => invoke<SavesState>("saves_state"),
+  savesBackup: () => invoke<ActionRecord>("saves_backup"),
+  savesRestore: (path: string) => invoke<ActionRecord>("saves_restore", { path }),
+  reportsRetry: () => invoke<void>("reports_retry"),
+  feedbackMeta: () => invoke<FeedbackMeta>("feedback_meta"),
+  feedbackBoard: (query: BoardQuery) =>
+    invoke<Board>("feedback_board", {
+      page: query.page ?? 1,
+      category: query.category ?? "",
+      status: query.status ?? "",
+      q: query.q ?? "",
+      sort: query.sort ?? "",
+    }),
+  feedbackIssue: (id: string) => invoke<Issue>("feedback_issue", { id }),
+  feedbackMine: () => invoke<Mine[]>("feedback_mine"),
+  feedbackSubmit: (input: Submission) => invoke<SubmitOutcome>("feedback_submit", { input }),
+  pickClientDir: () => invoke<ActionRecord>("pick_client_dir"),
+  discoverClient: () => invoke<ActionRecord>("discover_client"),
+  quit: (choice: "stop" | "keep" | "cancel") =>
+    invoke<ActionRecord>("quit_with_choice", { choice }),
+  panelOpen: (panel: string) => invoke<void>("panel_open", { panel }),
+  panelDock: (panel: string) => invoke<void>("panel_dock", { panel }),
+  panelClosed: (panel: string) => invoke<void>("panel_closed", { panel }),
+};
+
+export const events = {
+  onLog: (handler: (line: LogLine) => void) => listen<LogLine>("log", (e) => handler(e.payload)),
+  onPhase: (handler: (status: Status) => void) =>
+    listen<Status>("game-phase", (e) => handler(e.payload)),
+  onReadiness: (handler: (ready: Readiness) => void) =>
+    listen<Readiness>("readiness-changed", (e) => handler(e.payload)),
+  onAlert: (handler: (alert: { text: string }) => void) =>
+    listen<{ text: string }>("game-alert", (e) => handler(e.payload)),
+  onPortBlocked: (handler: (blocked: PortBlocked) => void) =>
+    listen<PortBlocked>("game-port-blocked", (e) => handler(e.payload)),
+  onPanelReturned: (handler: (moved: PanelMoved) => void) =>
+    listen<PanelMoved>("panel-returned", (e) => handler(e.payload)),
+  onPanelClosed: (handler: (panel: string) => void) =>
+    listen<{ panel: string }>("panel-closed", (e) => handler(e.payload.panel)),
+  onPanelHover: (handler: (hover: PanelHover) => void) =>
+    listen<PanelHover>("panel-hover", (e) => handler(e.payload)),
+};
+
+export const PHASE_LABEL: Record<Phase, string> = {
+  idle: "未运行",
+  starting: "启动中",
+  running: "运行中",
+  stopping: "停止中",
+  error: "异常",
+};
+
+/** 后端返回的 Err 字符串就是给人看的话，界面不再另外编一套文案。 */
+export function errText(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return String(err);
+}
+
+export type { UnlistenFn };
