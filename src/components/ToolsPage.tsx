@@ -7,6 +7,7 @@ import {
   type AutofireLive,
   type ConfigView,
   type KeyOption,
+  type ServerUpdateCheck,
 } from "../bridge";
 
 const EMPTY_CONFIG: AutofireConfig = {
@@ -118,6 +119,8 @@ export default function ToolsPage({
   const [targets, setTargets] = useState("dfo.exe");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [update, setUpdate] = useState<ServerUpdateCheck | null>(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -194,6 +197,39 @@ export default function ToolsPage({
       onNotice(errText(err), "err");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const checkUpdate = async () => {
+    setUpdateBusy(true);
+    try {
+      const info = await commands.serverUpdateCheck();
+      setUpdate(info);
+      if (!info.has_update) {
+        onNotice(`已是最新（${info.latest_tag}）`);
+      }
+    } catch (err) {
+      onNotice(errText(err), "err");
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
+
+  const applyUpdate = async () => {
+    setUpdateBusy(true);
+    try {
+      const record = await commands.serverUpdateApply();
+      onNotice(record.message);
+      // 重新查一次，刷新版本号显示。
+      try {
+        setUpdate(await commands.serverUpdateCheck());
+      } catch {
+        /* 不阻塞主流程 */
+      }
+    } catch (err) {
+      onNotice(errText(err), "err");
+    } finally {
+      setUpdateBusy(false);
     }
   };
 
@@ -533,6 +569,38 @@ export default function ToolsPage({
           ) : null}
           <p className="hint">
             只有在焦点落到目标进程、且总开关开着时才计数；数字只活在这一场，重启启动器归零。
+          </p>
+        </section>
+
+        <section className="card">
+          <h2>服务端更新</h2>
+          <p className="hint">
+            从 GitHub Release 拉取最新服务端（dfolauncher / wireprobe / 配置），自动测速选最快镜像，
+            保留 runtime\storage\ 存档。更新前请先停止服务端。
+          </p>
+          {update ? (
+            <div className="field">
+              <p className="hint">
+                本机版本：<strong>{update.current_tag ?? "未部署"}</strong>
+                <br />
+                最新版本：<strong>{update.latest_tag}</strong>
+                <br />
+                包大小：{(update.asset_size / 1048576).toFixed(1)} MB（{update.asset_name}）
+              </p>
+            </div>
+          ) : null}
+          <div className="row">
+            <button className="btn" disabled={updateBusy} onClick={() => void checkUpdate()}>
+              {updateBusy ? "检查中…" : "检查更新"}
+            </button>
+            {update?.has_update ? (
+              <button className="btn" data-tone="accent" disabled={updateBusy} onClick={() => void applyUpdate()}>
+                {updateBusy ? "下载部署中…" : `更新到 ${update.latest_tag}`}
+              </button>
+            ) : null}
+          </div>
+          <p className="hint">
+            下载与部署的详细进度会出现在「运行日志」面板。部署完成后下次点「开始游戏」即生效。
           </p>
         </section>
 

@@ -1,0 +1,25 @@
+﻿node.exe :         Info Looking up installed tauri packages to check mismatched versions...
+所在位置 C:\Program Files\nodejs\npx.ps1:16 字符: 5
++     & "$basedir/node$exe"  "$basedir/node_modules/npm/bin/npx-cli.js" ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (        Info Lo...hed versions...:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+     Running beforeBuildCommand `npm run build`
+
+> dfo-launcher@0.1.0 build
+> tsc && vite build
+
+[36mvite v8.3.4 [32mbuilding client environment for production...[36m[39m
+transforming...
+✓ 44 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.42 kB │ gzip:  0.31 kB
+dist/assets/index-pCg5Bkmc.css   24.55 kB │ gzip:  5.54 kB
+dist/assets/index-D02vokb8.js   313.84 kB │ gzip: 94.70 kB
+
+[32m✓ built in 96ms[39m
+   Compiling dfo-launcher v0.1.0 (D:\Game\dof\115\115US-launcher\src-tauri)
+    Finished `release` profile [optimized] target(s) in 1m 42s
+       Built application at: D:\Game\dof\115\115US-launcher\src-tauri\target\release\dfo-launcher.exe

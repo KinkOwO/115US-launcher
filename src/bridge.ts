@@ -374,6 +374,25 @@ export interface SavesState {
   backups: BackupItem[];
 }
 
+/** 服务端更新检查结果。 */
+export interface ServerUpdateCheck {
+  current_tag: string | null;
+  latest_tag: string;
+  has_update: boolean;
+  asset_name: string;
+  asset_size: number;
+  download_url: string;
+}
+
+export interface SelfUpdateCheck {
+  current_version: string;
+  latest_version: string;
+  has_update: boolean;
+  asset_name: string;
+  asset_size: number;
+  download_url: string;
+}
+
 export const commands = {
   appInfo: () => invoke<AppInfo>("app_info"),
   logSnapshot: (limit = 600) => invoke<LogLine[]>("log_snapshot", { limit }),
@@ -416,6 +435,12 @@ export const commands = {
   feedbackSubmit: (input: Submission) => invoke<SubmitOutcome>("feedback_submit", { input }),
   pickClientDir: () => invoke<ActionRecord>("pick_client_dir"),
   discoverClient: () => invoke<ActionRecord>("discover_client"),
+  serverUpdateCheck: () => invoke<ServerUpdateCheck>("server_update_check"),
+  serverUpdateApply: () => invoke<ActionRecord>("server_update_apply"),
+  selfUpdateCheck: () => invoke<SelfUpdateCheck>("self_update_check"),
+  selfUpdateApply: (info: SelfUpdateCheck) =>
+    invoke<ActionRecord>("self_update_apply", { info }),
+  selfUpdateCleanup: () => invoke<void>("self_update_cleanup"),
   quit: (choice: "stop" | "keep" | "cancel") =>
     invoke<ActionRecord>("quit_with_choice", { choice }),
   panelOpen: (panel: string) => invoke<void>("panel_open", { panel }),
@@ -439,6 +464,10 @@ export const events = {
     listen<{ panel: string }>("panel-closed", (e) => handler(e.payload.panel)),
   onPanelHover: (handler: (hover: PanelHover) => void) =>
     listen<PanelHover>("panel-hover", (e) => handler(e.payload)),
+  onFirstRunNoServer: (handler: () => void) =>
+    listen("first-run-no-server", () => handler()),
+  onServerUpdateAvailable: (handler: (info: ServerUpdateCheck) => void) =>
+    listen<ServerUpdateCheck>("server-update-available", (e) => handler(e.payload)),
 };
 
 export const PHASE_LABEL: Record<Phase, string> = {
