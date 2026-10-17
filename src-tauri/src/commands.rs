@@ -24,7 +24,6 @@ use crate::updater;
 
 pub const APP_NAME: &str = "DFO-115US 启动器";
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const APP_AUTHOR: &str = "起飞 · Kink";
 
 #[derive(Clone)]
 pub struct AppState {
@@ -39,7 +38,6 @@ pub struct AppState {
 pub struct AppInfo {
     pub name: &'static str,
     pub version: &'static str,
-    pub author: &'static str,
     pub root: String,
     pub root_source: String,
     pub app_dir: String,
@@ -105,7 +103,6 @@ pub async fn app_info(state: tauri::State<'_, AppState>) -> Result<AppInfo, Stri
     Ok(AppInfo {
         name: APP_NAME,
         version: APP_VERSION,
-        author: APP_AUTHOR,
         root: state.root.path.display().to_string(),
         root_source: state.root.source.to_string(),
         app_dir: state.app_dir.display().to_string(),

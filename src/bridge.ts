@@ -84,7 +84,6 @@ export interface PortReport {
 export interface AppInfo {
   name: string;
   version: string;
-  author: string;
   root: string;
   root_source: string;
   app_dir: string;
