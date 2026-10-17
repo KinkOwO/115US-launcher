@@ -140,26 +140,9 @@ export default function App() {
       else got.forEach((stop) => stop());
     };
 
-    // 四件事各自落各自的 state：一条命令失败或卡住，不该把首屏其余三块一起带走。
-    const boot = () => {
-      const take = <T,>(task: Promise<T>, put: (value: T) => void) => {
-        task.then(
-          (value) => {
-            if (alive) put(value);
-          },
-          (err: unknown) => {
-            if (alive) flash(errText(err), "err");
-          },
-        );
-      };
-      take(commands.appInfo(), setInfo);
-      take(commands.status(), setStatus);
-      take(commands.readiness(), setReadiness);
-      take(commands.config(), setConfig);
-    };
-
-    // 事件订阅失败也不能拦住首屏：数据是盘上事实，通知只是锦上添花。
-    bind().then(boot, boot);
+    // 首屏那四件不再等这里：七个 listen() 里任何一个不落地，那批数据就永远不会发出去，
+    // 页脚的「整合包：…」会一直停在 `??` 兜底上。事件订阅自己收尾即可。
+    void bind();
 
     const poll = window.setInterval(() => void refresh(), 4000);
     return () => {
@@ -169,6 +152,29 @@ export default function App() {
       if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
     };
   }, [refresh, flash, dockBack]);
+
+  // 首屏四件各拉一次、各自落各自的 state：一条命令失败或卡住，不该把其余三块一起带走。
+  // 单独立一条 effect 是有意的 —— 它原先挂在上面那条的 `bind()` 之后，订阅没落地就整批不发。
+  useEffect(() => {
+    let alive = true;
+    const take = <T,>(task: Promise<T>, put: (value: T) => void) => {
+      task.then(
+        (value) => {
+          if (alive) put(value);
+        },
+        (err: unknown) => {
+          if (alive) flash(errText(err), "err");
+        },
+      );
+    };
+    take(commands.appInfo(), setInfo);
+    take(commands.status(), setStatus);
+    take(commands.readiness(), setReadiness);
+    take(commands.config(), setConfig);
+    return () => {
+      alive = false;
+    };
+  }, [flash]);
 
   // 点标题栏的关闭：先问三选一，别把环境丢在那儿就走。
   useEffect(() => {

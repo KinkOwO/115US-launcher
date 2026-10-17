@@ -242,10 +242,30 @@ export interface ScriptMods {
 export interface ClientMods {
   dir: string;
   present: boolean;
+  /** plugins.json 自己在不在、认不认；宿主把认不出的清单当成没有清单。 */
+  manifest: "present" | "missing" | "corrupt";
   auto_discover: boolean;
+  /** mods/mods.json —— 迁移之后启动器读写的就是这一份。 */
+  switches: "present" | "missing" | "corrupt";
+  switch_dir: string;
+  /** 勾是不是改了算数：只有统一入口这一层在跑才算。 */
+  switchable: boolean;
+  /** 开关会被绕过、或根本没人读时的报警；空串表示正常。 */
+  bypass_note: string;
+  loader: LoaderStatus;
   plugins: ClientPlugin[];
   host_log: string;
   host_tail: string[];
+}
+
+/** mod-loader 落在 mods/mod-loader.status.json 里的一页账。 */
+export interface LoaderStatus {
+  seen: boolean;
+  ready: boolean | null;
+  reject_reason: string;
+  declared: number;
+  started: number;
+  failed: number;
 }
 
 export interface ClientPlugin {
@@ -254,6 +274,13 @@ export interface ClientPlugin {
   in_manifest: boolean;
   enabled: boolean;
   deps: string[];
+  /** 内置中文功能提示，表里没有就是空串。 */
+  description: string;
+  /** 统一入口报的实装结果；null = 这一层还没跑过。 */
+  loaded: boolean | null;
+  load_note: string;
+  /** 统一入口调 `ModStart` 的返回值：0 = 入口认账，非 0 = 装进进程了但它拒绝启动。 */
+  start_return: number;
   ready: boolean | null;
   reject_reason: string;
 }
@@ -393,8 +420,12 @@ export const commands = {
   modsState: () => invoke<ModsState>("mods_state"),
   setServerMod: (id: string, enabled: boolean) =>
     invoke<ActionRecord>("set_server_mod", { id, enabled }),
+  setClientMod: (id: string, enabled: boolean) =>
+    invoke<ActionRecord>("set_client_mod", { id, enabled }),
+  importClientMod: () => invoke<ActionRecord>("import_client_mod"),
   autofireGet: () => invoke<AutofireView>("autofire_get"),
   autofireLive: () => invoke<AutofireLive>("autofire_live"),
+  autofireSetMaster: (on: boolean) => invoke<AutofireLive>("autofire_set_master", { on }),
   autofireSave: (config: AutofireConfig) =>
     invoke<ActionRecord>("autofire_save", { config }),
   autofireStop: () => invoke<ActionRecord>("autofire_stop"),

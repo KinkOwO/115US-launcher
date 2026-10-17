@@ -165,12 +165,12 @@ export default function ToolsPage({
       ),
     }));
 
-  const save = async () => {
+  const save = async (over?: Partial<AutofireConfig>) => {
     const parsed = targets
       .split(",")
       .map((item) => item.trim().toLowerCase())
       .filter((item) => item.length > 0);
-    const body: AutofireConfig = { ...cfg, targets: parsed.length > 0 ? parsed : ["dfo.exe"] };
+    const body: AutofireConfig = { ...cfg, ...over, targets: parsed.length > 0 ? parsed : ["dfo.exe"] };
     setBusy(true);
     try {
       const record = await commands.autofireSave(body);
@@ -199,13 +199,34 @@ export default function ToolsPage({
 
   const frozen = busy || !loaded;
   const on = live?.running === true;
+  // 界面那个开关显示的就是引擎里那个总开关：跑着的时候听 live，没跑的时候听盘上的意图。
+  const armed = live ? live.running && live.master : cfg.enabled;
+
+  const toggleEnable = async () => {
+    if (!live?.running) {
+      // 还没挂监听：点一下直接按新意图保存并生效，别留「显示开着一个没跑的东西」。
+      await save({ enabled: !armed });
+      return;
+    }
+    const next = !armed;
+    setBusy(true);
+    try {
+      // 已经在跑：这一等价于按一下热键，翻的是同一个状态。
+      setLive(await commands.autofireSetMaster(next));
+      patch({ enabled: next });
+      onNotice(next ? "连发已打开" : "连发已关闭", "ok");
+    } catch (err) {
+      onNotice(errText(err), "err");
+    } finally {
+      setBusy(false);
+    }
+  };
   // 三个计数各管一段：钩子收没收到、发没发出去、被哪道闸挡下。照这句就知道该动哪里。
   const verdict = (() => {
     if (!live || !live.running) return null;
     if (live.hook_events === 0)
       return "启动器一个物理按键都没收到：多半是游戏以更高权限运行，请以「以管理员身份运行」重开启动器。";
-    if (live.sends === 0 && live.skip_master > 0)
-      return `按键收到了，但总开关是关的：按一下 ${live.hotkey} 恢复连发。`;
+    if (!live.master) return `总开关是关的：按一下 ${live.hotkey} 或点上面「启用连发」才开（按住不放不会来回跳）。`;
     if (live.sends === 0 && live.skip_focus > 0)
       return `按键收到了，但游戏不在前台：最前面的窗口得属于 ${live.targets.join("、")}。`;
     if (live.send_fails > 0) return live.last_fail;
@@ -222,17 +243,21 @@ export default function ToolsPage({
           <div className="field">
             <button
               className="switch"
-              data-on={cfg.enabled ? "true" : "false"}
+              data-on={armed ? "true" : "false"}
               disabled={frozen}
-              onClick={() => patch({ enabled: !cfg.enabled })}
+              onClick={() => void toggleEnable()}
             >
               <span>
                 启用连发
                 <br />
-                <em className="hint">保存后才挂全局键盘监听；不启用时一个键都不碰</em>
+                <em className="hint">这一点就是总开关：开着才连发，热键 {cfg.hotkey || "F10"} 翻的也是它</em>
               </span>
               <span className="switch-track" />
             </button>
+            <p className="hint">
+              中文输入法（拼音）下长按连发键会掉帧：合成器要把收到的每一个键都再算一遍，我们注入的那份也算。
+              连发期间请把输入法切到英文档（ENG），停下再切回来。启动器不会替你改输入法。
+            </p>
           </div>
 
           <div className="field">
@@ -244,9 +269,9 @@ export default function ToolsPage({
               onChange={(value) => patch({ hotkey: value })}
             />
             <p className="hint">
-              按一下关、再按一下开，跟界面里的开关是同一个总开关。在界面点「保存并生效」时它已经是
-              开着的，进游戏先按这一下反而会关掉。这个键被启动器吃掉、不会传进游戏，所以别选成技能键；
-              被游戏先绑走时保存会提示换键。每次按都会在运行日志里记一句「连发总开关已暂停 / 已恢复」。
+              这个键翻的就是上面那个开关，两个是同一个状态：开着按一下变关，关着按一下变开，界面最迟一秒跟上。
+              一次按键只翻一次，按住不放不会来回跳。这个键被启动器吃掉、不会传进游戏，所以别选成技能键；
+              被游戏先绑走时保存会提示换键。每次翻都会在运行日志里记一句「连发总开关已开 / 已关」。
             </p>
           </div>
 
@@ -469,7 +494,7 @@ export default function ToolsPage({
               {on ? "监听已挂上" : "未监听"}
             </span>
             <span className="chip" data-tone={live?.master ? "ok" : "busy"}>
-              总开关 {live?.master ? "开" : "关"}
+              总开关 {live?.master ? "开" : `关 · 按一下 ${live?.hotkey || "热键"} 开`}
             </span>
             <span className="chip" data-tone={live?.focused ? "ok" : undefined}>
               {live?.focused ? "焦点在游戏" : "焦点不在游戏"}
