@@ -17,7 +17,9 @@ mod procutil;
 mod report;
 mod saves;
 mod session;
+mod self_updater;
 mod site;
+mod updater;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -30,6 +32,8 @@ pub fn run() {
     let app_dir = paths::app_dir();
     let bus = Bus::new(&app_dir.join("logs"));
     let reporter = report::Reporter::new(&app_dir, root.clone(), bus.clone());
+    // panic 钩子比建窗还早：这样连 builder 这一段炸了也留得下报告。
+    install_panic_hook(reporter.clone(), bus.clone());
     let session = Session::new(root.clone(), bus.clone());
     session.attach_reporter(reporter.clone());
     let autofire = std::sync::Arc::new(autofire::Engine::new());
@@ -58,8 +62,6 @@ pub fn run() {
                 commands::APP_VERSION
             ));
             bus.info(format!("数据目录：{}", app_dir.display()));
-            // 出包漏了 `--features prod` 时，窗口会去载 devUrl（localhost:1420）而不是内嵌资源，
-            // 玩家只看到一张「localhost 拒绝连接」。把这行地址留在日志里，一眼就能判。
             if let Some(win) = app.get_webview_window("main") {
                 if let Ok(url) = win.url() {
                     bus.info(format!("界面地址：{url}"));
@@ -70,16 +72,14 @@ pub fn run() {
                 bus.error(&err);
             }
 
-            install_panic_hook(reporter.clone(), bus.clone());
             reporter.start();
-
             session.attach(app.handle().clone());
             // 连发的诊断与实况由引擎自己的线程写日志，不经过界面：工具页没开着也要留下一场能对账的。
             let log_bus = bus.clone();
             autofire.attach_log(std::sync::Arc::new(move |line: String| log_bus.info(line)));
 
-            // 首次使用的后台准备：只补「缺的那份配置」，绝不碰玩家的存档库文件。
-            std::thread::spawn(move || prepare_environment(session, autofire));
+            let app_handle = app.handle().clone();
+            std::thread::spawn(move || prepare_environment(app_handle, session, autofire));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -118,6 +118,11 @@ pub fn run() {
             commands::feedback_submit,
             commands::pick_client_dir,
             commands::discover_client,
+            commands::server_update_check,
+            commands::server_update_apply,
+            commands::self_update_check,
+            commands::self_update_apply,
+            commands::self_update_cleanup,
             commands::quit_with_choice,
             panels::panel_open,
             panels::panel_dock,
@@ -182,7 +187,13 @@ fn install_panic_hook(reporter: std::sync::Arc<report::Reporter>, bus: std::sync
 }
 
 /// 与旧版 `autoPrepare` 同一件事的最小版：认客户端、落存档配置、按配置把连发挂上。
-fn prepare_environment(session: Session, autofire: std::sync::Arc<autofire::Engine>) {
+fn prepare_environment(
+    app: tauri::AppHandle,
+    session: Session,
+    autofire: std::sync::Arc<autofire::Engine>,
+) {
+    use tauri::Emitter;
+
     let root = session.root();
     let bus = session.bus();
     let client_dir = config::client_dir(&root);
@@ -204,6 +215,11 @@ fn prepare_environment(session: Session, autofire: std::sync::Arc<autofire::Engi
         Err(err) => bus.error(err),
     }
 
+    // dfolauncher.exe 硬性要求 launcher.local.json 里有 server_binary，缺了直接退出。
+    if let Err(err) = config::ensure_launcher_local_json(&root) {
+        bus.error(err);
+    }
+
     // 连发：配置里开着就自己把监听挂上，和旧版一样不用玩家再点一次。
     // 放后台线程是有意的——挂钩子 + RegisterHotKey + 等线程报到，最坏一秒，不能拖主窗。
     let cfg = autofire::load(&root);
@@ -211,6 +227,22 @@ fn prepare_environment(session: Session, autofire: std::sync::Arc<autofire::Engi
         match autofire.start(cfg) {
             Ok(message) => bus.info(message),
             Err(err) => bus.error(format!("连发没能启用：{err}")),
+        }
+    }
+
+    // 服务端更新：没有编排 CLI = 首次部署，前端引导选客户端后自动下载；
+    // 已有编排 CLI = 后台查一次 GitHub，有新版就弹前端窗问要不要更。
+    if !root.orchestrator_exe().is_file() {
+        bus.warn("未检测到服务端编排程序，进入首次部署流程。");
+        let _ = app.emit("first-run-no-server", ());
+    } else {
+        match updater::check(&root) {
+            Ok(info) if info.has_update => {
+                bus.info(format!("发现服务端新版本：{}（本机 {}）", info.latest_tag, info.current_tag.as_deref().unwrap_or("未部署")));
+                let _ = app.emit("server-update-available", info);
+            }
+            Ok(_) => bus.ok("服务端已是最新。"),
+            Err(err) => bus.warn(format!("检查服务端更新失败（离线或限流）：{err}")),
         }
     }
 

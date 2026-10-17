@@ -754,7 +754,7 @@ dependencies = [
 
 [[package]]
 name = "dfo-launcher"
-version = "0.1.0"
+version = "2026.10.17"
 dependencies = [
  "chrono",
  "rusqlite",

@@ -150,6 +150,28 @@ pub fn server_binary(root: &Root) -> PathBuf {
     }
 }
 
+/// dfolauncher.exe 启动时硬性要求 `launcher.local.json` 里有 `server_binary`，
+/// 否则直接退出并报 "launcher.local.json must set server_binary"。
+/// 首次部署后这个文件可能根本不存在或缺字段，启动时幂等补一份。
+pub fn ensure_launcher_local_json(root: &Root) -> Result<(), String> {
+    let mut value = read_json(&root.launcher_local_json());
+    if !value.is_object() {
+        value = Value::Object(Map::new());
+    }
+    let need_write = {
+        let entry = value.get("server_binary").and_then(Value::as_str);
+        match entry {
+            Some(s) if !s.trim().is_empty() => false,
+            _ => true,
+        }
+    };
+    if need_write {
+        value["server_binary"] = Value::String(DEFAULT_SERVER_BINARY.to_string());
+        write_json(&root.launcher_local_json(), &value, 2)?;
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------- 存档路由
 
 pub fn storage_route_state(root: &Root) -> StorageRoute {
