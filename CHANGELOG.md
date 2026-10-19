@@ -98,7 +98,10 @@
 `RicardoLz/115-launcher` releases/latest 的那枚覆盖进 `<服务端>\dfo-launcher.exe`
 （`32c90ed2…4b729685`，8 815 616 字节）。按内嵌前端资产名判它的代次：它是 `index-I6QjgH73.js` /
 `index-CVQ4oQBE.css`，且带 `MEMORY_GUARD` + `launcher.local.json` ⇒ 源码是 `09415dd`（上一轮），
-**没有**这一轮的胶囊与摆放栏。重新构建后换成 `72927335e0165f212aa01250474945fc98429496de2451d423cda4528e4bafaa`
+**没有**这一轮的胶囊与摆放栏。这条判断已复现而不只是推断：本轮 `git diff 09415dd..HEAD -- src-tauri/src` 为空
+（Rust 一行没动，所以差异只可能在 `dist`），而在 detach worktree 里对 `09415dd` 重跑一次 vite 构建，打出的资产名
+正是 `index-I6QjgH73.js` / `index-CVQ4oQBE.css`——与那枚 exe 内嵌的逐字相同。（单看 `MEMORY_GUARD` 只能证「≥ 09415dd」，
+不能定代次。）重新构建后换成 `72927335e0165f212aa01250474945fc98429496de2451d423cda4528e4bafaa`
 （8 798 208 字节，内嵌 `index-DV3XqcRT.js`，与本轮 `npm run build` 打印的资产名一致）；
 `32c90ed2` 留名为 `dfo-launcher.exe.bak-32c90ed2`。同代判据这次跑的是「构建前为空」（源码自分代构建后未再改动）
 + 构建后再次为空。哈希与上一次装机的 `854cdafb…8246f1` 不等是 `tauri build` 两次 patch bundle-type 与内嵌
